@@ -1,0 +1,14 @@
+services:
+  llm-api:
+    build: .
+    ports:
+      - "8000:8000"
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp=unconfined
+    volumes:
+      - ./models:/models
+    environment:
+      - MODEL_PATH=/models/deepseek-v3-7b

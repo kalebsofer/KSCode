@@ -69,7 +69,7 @@ htmlcov/
 
 /models/DeepSeek-R1-Distill-Qwen-7B/config.json
 /models/DeepSeek-R1-Distill-Qwen-7B/generation_config.json
-/models/DeepSeek-R1-Distill-Qwen-7B/model.safetensors
+/models/DeepSeek-R1-Distill-Qwen-7B/model.safetensors.index.json
 /models/DeepSeek-R1-Distill-Qwen-7B/tokenizer.json
 /models/DeepSeek-R1-Distill-Qwen-7B/tokenizer_config.json
 /models/DeepSeek-R1-Distill-Qwen-7B/model-00002-of-000002.safetensors

@@ -1,26 +1,24 @@
-import os
 import sys
 from pathlib import Path
 
+# Add the app directory to the Python path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from main import app, get_model_loader, ChatRequest, ChatMessage
+from main import ChatRequest, ChatMessage
+from model_loader import OpenAIAssistant
 
 
 def main():
-    # Load the model
-    model_loader = get_model_loader()
+    client = OpenAIAssistant()
 
     while True:
         user_input = input("You: ")
         if user_input.lower() in ["exit", "quit"]:
             break
 
-        # Create a chat request
         request = ChatRequest(messages=[ChatMessage(role="user", content=user_input)])
 
-        # Simulate the API call
-        response = model_loader.generate_chat(
+        response = client.generate_chat(
             request.messages, max_tokens=512, temperature=0.6
         )
 

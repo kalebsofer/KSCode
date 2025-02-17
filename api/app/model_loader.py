@@ -1,89 +1,61 @@
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from threading import Lock
-from typing import List
-from schemas import ChatMessage
+import os
 import logging
-import time
+from typing import List
+from openai import OpenAI
+from dotenv import load_dotenv
+from schemas import ChatMessage
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 
-class ModelLoader:
-    def __init__(self, model_path):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model_path = model_path
-        self.model = None
-        self.tokenizer = None
-        self.lock = Lock()
-        logger.info(f"Initializing ModelLoader on device: {self.device}")
+class OpenAIAssistant:
+    def __init__(self):
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.assistant_id = self._create_or_get_assistant()
+        self.thread_id = self.client.beta.threads.create().id
+        logger.info("OpenAI Assistant initialized")
 
-    def load_model(self):
-        if self.model is None:
-            start_time = time.time()
-            logger.info(f"Loading model from {self.model_path}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_path,
-                trust_remote_code=True,
-                padding_side="left",
-                pad_token="<|endoftext|>",
-            )
-            logger.info("Tokenizer loaded successfully")
+    def _create_or_get_assistant(self):
+        assistants = self.client.beta.assistants.list()
+        for assistant in assistants.data:
+            if assistant.name == "Code Editor Assistant":
+                return assistant.id
 
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_path,
-                torch_dtype=torch.float16,
-                device_map="auto",
-                trust_remote_code=True,
-                use_safetensors=True,
-            )
-
-            if torch.cuda.is_available():
-                self.model.to("cuda")
-                logger.info("Model moved to GPU")
-
-            logger.info(f"Model loaded in {time.time() - start_time:.2f} seconds")
+        instructions = (
+            "You are a code editor assistant. Help users with code completion, "
+            "explanations, and refactoring."
+        )
+        assistant = self.client.beta.assistants.create(
+            name="Code Editor Assistant",
+            instructions=instructions,
+            model="gpt-4-0125-preview",
+            tools=[{"type": "code_interpreter"}],
+        )
+        return assistant.id
 
     def generate_chat(
         self, messages: List[ChatMessage], max_tokens=512, temperature=0.7
     ):
-        if self.model is None:
-            self.load_model()
-
-        with self.lock:
-            start_time = time.time()
-            logger.info("Formatting conversation...")
-            formatted_conversation = self._format_conversation(messages)
-
-            logger.info("Tokenizing input...")
-            inputs = self.tokenizer(
-                formatted_conversation,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-            ).to(self.device)
-
-            logger.info("Generating response...")
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    inputs.input_ids,
-                    attention_mask=inputs.attention_mask,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    max_new_tokens=max_tokens,
-                    temperature=temperature,
-                    do_sample=True,
+        try:
+            for msg in messages:
+                self.client.beta.threads.messages.create(
+                    thread_id=self.thread_id, role=msg.role, content=msg.content
                 )
-            logger.info(f"Response generated in {time.time() - start_time:.2f} seconds")
-            return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-    def _format_conversation(self, messages: List[ChatMessage]) -> str:
-        """Format conversation history into a single string"""
-        formatted = []
-        for msg in messages:
-            if msg.role == "user":
-                formatted.append(f"User: {msg.content}")
-            elif msg.role == "assistant":
-                formatted.append(f"Assistant: {msg.content}")
-        return "\n".join(formatted)
+            run = self.client.beta.threads.runs.create(
+                thread_id=self.thread_id,
+                assistant_id=self.assistant_id,
+            )
+
+            while run.status != "completed":
+                run = self.client.beta.threads.runs.retrieve(
+                    thread_id=self.thread_id, run_id=run.id
+                )
+
+            messages = self.client.beta.threads.messages.list(thread_id=self.thread_id)
+            return messages.data[0].content[0].text.value
+        except Exception as e:
+            logger.error(f"OpenAI Assistant error: {str(e)}")
+            raise
